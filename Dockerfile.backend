@@ -1,0 +1,26 @@
+# 1) 빌드 단계
+FROM node:18-alpine AS builder
+WORKDIR /app
+
+# 패키지 정보만 복사해 설치 (속도 최적화)
+COPY package*.json ./
+RUN npm install
+
+# 소스 코드 복사 및 빌드
+COPY . .
+RUN npm run build
+
+# 2) 런타임 단계
+FROM node:18-alpine
+WORKDIR /app
+
+# 빌드 결과물과 node_modules만 복사
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+
+ENV NODE_ENV=production
+EXPOSE 3000
+
+# 실제 실행 커맨드
+CMD ["node", "dist/index.js"]
