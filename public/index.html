@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>🍌 과일 관리</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    section { margin-bottom: 1.5em; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+    #create-section { display: none; }
+    #login-msg { color: red; }
+    input, button { margin-right: 8px; }
+  </style>
+</head>
+<body>
+  <h1>🍌 과일 관리</h1>
+
+  <!-- 로그인 섹션 -->
+  <section id="auth-section">
+    <h2>로그인</h2>
+    <input id="email" type="email" placeholder="이메일" />
+    <input id="password" type="password" placeholder="패스워드" />
+    <button id="login-btn">로그인</button>
+    <p id="login-msg"></p>
+  </section>
+
+  <!-- 새 과일 추가 (로그인 후에만 보임) -->
+  <section id="create-section">
+    <h2>새 과일 추가</h2>
+    <form id="create-product-form">
+      <input name="name" placeholder="이름" required />
+      <input type="number" name="unitPrice" placeholder="가격" required />
+      <input name="unit" placeholder="단위" required />
+      <button type="submit">추가</button>
+    </form>
+  </section>
+
+  <!-- 과일 목록 테이블 -->
+  <h2>과일 목록</h2>
+  <table id="products-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>이름</th>
+        <th>가격</th>
+        <th>단위</th>
+        <th>동작</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    // 1) 공통 fetch 래퍼: JWT 토큰을 자동으로 헤더에 추가
+    const api = (path, opts = {}) => {
+      const token = localStorage.getItem('jwt');
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: 'Bearer ' + token } : {})
+      };
+      return fetch(path, { headers, ...opts })
+        .then(res => res.ok ? res.json() : Promise.reject(res));
+    };
+
+    // 2) 로그인 처리
+    document.getElementById('login-btn').addEventListener('click', async () => {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      try {
+        const { token } = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        }).then(r => r.ok ? r.json() : Promise.reject('Login failed'));
+        localStorage.setItem('jwt', token);
+        document.getElementById('login-msg').textContent = '로그인 성공!';
+        document.getElementById('create-section').style.display = 'block';
+      } catch {
+        document.getElementById('login-msg').textContent = '로그인 실패';
+      }
+    });
+
+    // 3) 페이지 로드 시: 로그인 여부에 따라 UI 제어 및 목록 불러오기
+    window.addEventListener('DOMContentLoaded', () => {
+      if (localStorage.getItem('jwt')) {
+        document.getElementById('create-section').style.display = 'block';
+      }
+      fetchProducts();
+    });
+
+    // 4) 과일 목록 조회 & 렌더링
+    async function fetchProducts() {
+      const tbody = document.querySelector('#products-table tbody');
+      tbody.innerHTML = '';
+      try {
+        const data = await api('/products');
+        const items = data.list || data;
+        for (const p of items) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${p.id}</td>
+            <td>${p.name}</td>
+            <td>${p.unitPrice}</td>
+            <td>${p.unit}</td>
+            <td>
+              <button data-action="edit" data-id="${p.id}">✏️</button>
+              <button data-action="delete" data-id="${p.id}">🗑️</button>
+            </td>`;
+          tbody.append(tr);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // 5) 테이블 내 수정/삭제 버튼 이벤트
+    document.getElementById('products-table').addEventListener('click', async e => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const id = btn.dataset.id;
+      if (btn.dataset.action === 'delete') {
+        await api(`/products/${id}`, { method: 'DELETE' });
+        fetchProducts();
+      }
+      if (btn.dataset.action === 'edit') {
+        const name = prompt('새 이름:');
+        const price = prompt('새 가격:');
+        const unit = prompt('새 단위:');
+        if (name && price && unit) {
+          await api(`/products/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ name, unitPrice: +price, unit })
+          });
+          fetchProducts();
+        }
+      }
+    });
+
+    // 6) 새 과일 생성 폼 이벤트
+    document.getElementById('create-product-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const f = e.target;
+      const data = {
+        name: f.name.value,
+        unitPrice: +f.unitPrice.value,
+        unit: f.unit.value
+      };
+      await api('/products', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      f.reset();
+      fetchProducts();
+    });
+  </script>
+</body>
+</html>
